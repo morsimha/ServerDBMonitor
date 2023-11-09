@@ -27,7 +27,7 @@ class Server:
     def read(self, conn):
         data = conn.recv(PACKET_SIZE)
         if data:
-            self.handleRequest(conn, data)
+            self.handle_request(conn, data)
 
         print_lock.release()
         conn.close()
@@ -56,46 +56,46 @@ class Server:
             print(f'Accepted connection from {addr[0]}:{addr[1]}')
             start_new_thread(self.read, (conn,))
 
-    def handleRequest(self, conn, data):
+    def handle_request(self, conn, data):
         """ This function handles the request from the client. """
-        currRequest = Request()
-        currRequest.littleEndianUnpack(data)
+        curr_request = Request()
+        curr_request.little_endian_unpack(data)
 
-        requestedService = currRequest.code
+        requested_service = curr_request.code
 
-        if requestedService == RequestCode.REGISTER_REQUEST.value:
-            self.registerUser(conn, currRequest)
-        elif requestedService == RequestCode.LOGIN_REQUEST.value:  # Handle login requests
-            self.loginUser(conn, currRequest)
-        elif requestedService == RequestCode.PUB_KEY_SEND.value or RequestCode.FILE_SEND.value:
-            self.fileUpload(conn, currRequest)
+        if requested_service == request_code.REGISTER_REQUEST.value:
+            self.register_user(conn, curr_request)
+        elif requested_service == request_code.LOGIN_REQUEST.value:  # Handle login requests
+            self.login_user(conn, curr_request)
+        elif requested_service == request_code.PUB_KEY_SEND.value or request_code.FILE_SEND.value:
+            self.fileUpload(conn, curr_request)
         else:
             return
 
-    def registerUser(self, conn, currRequest):
+    def register_user(self, conn, curr_request):
         """ Registers user. If name exists, returns error.
             Otherwise, creates UUID, saves in memory and DB. """
-        currResponse = Response(
+        curr_response = Response(
             ResponseCode.REGISTER_SUCCESS.value, UUID_BYTES)
-        user = currRequest.payload.decode('utf-8')
+        user = curr_request.payload.decode('utf-8')
         try:
             if self.database.isExistentUser(user):
-                currResponse.code = ResponseCode.REGISTER_ERROR.value
-                currResponse.payloadSize = 0
-                data = currResponse.littleEndianPack()
+                curr_response.code = ResponseCode.REGISTER_ERROR.value
+                curr_response.payloadSize = 0
+                data = curr_response.little_endian_pack()
                 print(f'Error registering {user}, the user already exists')
 
             else:
                 id = bytes.fromhex(uuid.uuid4().hex)
                 self.database.registerClient(id, user)
                 self.database.setLastSeen(id, str(datetime.now()))
-                currResponse.payload = id
+                curr_response.payload = id
                 print(f'Successfully registered {user} with UUID of {id.hex()}.')
-                data = currResponse.littleEndianPack()
+                data = curr_response.little_endian_pack()
         except Exception as e:
-            currResponse.code = ResponseCode.GENERAL_ERROR.value
-            currResponse.payloadSize = 0
-            data = currResponse.littleEndianPack()
+            curr_response.code = ResponseCode.GENERAL_ERROR.value
+            curr_response.payloadSize = 0
+            data = curr_response.little_endian_pack()
             print(f'Error: Failed to register user - {e}.')
         sendPacket(conn, data)
 
@@ -117,65 +117,66 @@ class Server:
 
             encAESKey = enc.encryptPubKey(enc.key, pubkey)
             currResponse.payload = currRequest.uuid + encAESKey
-            data = currResponse.littleEndianPack()
+            data = currResponse.little_endian_pack()
             sendPacket(conn, data)
             print(f'AES key successfully sent to {username}.')
             return enc.key
         except Exception as e:
             currResponse = Response(ResponseCode.GENERAL_ERROR.value, 0)  # No UUID if user didn't appear in DB
-            data = currResponse.littleEndianPack()
+            data = currResponse.little_endian_pack()
             sendPacket(conn, data)
             print(f'Error: Failed to send Pubkey - {e}.')
 
 
-    def loginUser(self, conn, currRequest):
+    def login_user(self, conn, curr_request):
         """ Logs in a user. If name doesn't exist and RSA not found, returns error.
             Otherwise, returns the UUID and AES key of the user. """
         enc = Encryptor()
-        offset = currRequest.payloadSize
-        username = currRequest.payload[:offset].decode('utf-8')
+        offset = curr_request.payloadSize
+        username = curr_request.payload[:offset].decode('utf-8')
         user_info = self.database.getUserInfo(
             username)  # Assume getUserInfo method retrieves the UUID and AES key for a given username
         try:
-            if user_info is None:
-                # User not found in the database
-                currResponse = Response(ResponseCode.LOGIN_ERROR.value, 0)  # No UUID if user didn't appear in DB
-                print(f"Failed login attempt with username: {username}")
-            else:
+            if user_info:
                 # User found in the database
                 if 'PublicKey' in user_info:
                     user_uuid = user_info['UUID']
                     aes_key = user_info['AESKey']
                     self.AESKey = aes_key
-                    encAESKey = enc.encryptPubKey(aes_key, user_info['PublicKey'])
-                    currResponse = Response(ResponseCode.LOGIN_SUCCESS.value,
+                    enc_aes_key = enc.encryptPubKey(aes_key, user_info['PublicKey'])
+                    curr_response = Response(ResponseCode.LOGIN_SUCCESS.value,
                                             UUID_BYTES + MAX_AES_LEN)  # Payload size is the size of a UUID plus the size of an AES key
-                    currResponse.payload = user_uuid + encAESKey  # Set the payload to the user's UUID concatenated with the AES key
+                    curr_response.payload = user_uuid + enc_aes_key  # Set the payload to the user's UUID concatenated with the AES key
                     self.loggedUser = True
                     print(f"Successfully logged in user {username} with UUID: {user_uuid.hex()}")
                 else:
-                    currResponse = Response(ResponseCode.LOGIN_ERROR.value, user_info['UUID'] if user_info['UUID'] else 0)  # Return UUID payload for login error, no payload if doesn't exist in DB
+                    curr_response = Response(ResponseCode.LOGIN_ERROR.value, user_info['UUID'] if user_info['UUID'] else 0)  # Return UUID payload for login error, no payload if doesn't exist in DB
                     print(f"Failed login attempt with username: {username}")
+            else:
+                # User was not found in database
+                curr_response = Response(ResponseCode.LOGIN_ERROR.value, 0)  # No UUID if user didn't appear in DB
+                print(f"Login attempt failed for username: {username}. User does not exist in database.")
+
         except Exception as e:
-            currResponse = Response(ResponseCode.GENERAL_ERROR.value, 0)  # No UUID if user didn't appear in DB
+            curr_response = Response(ResponseCode.GENERAL_ERROR.value, 0)  # No UUID if user didn't appear in DB
             print(f'Error: Failed to login user - {e}.')
 
-        data = currResponse.littleEndianPack()
+        data = curr_response.little_endian_pack()
         sendPacket(conn, data)  # Send response back to the client
 
     def fileUpload(self, conn, currRequest):
         """ Handles upload of file, including encryption. """
-        if currRequest.code == RequestCode.PUB_KEY_SEND.value:
+        if currRequest.code == request_code.PUB_KEY_SEND.value:
             AESKey = self.sendPubKey(conn, currRequest)
             buffer = conn.recv(PACKET_SIZE)
-            currRequest.littleEndianUnpack(buffer)
+            currRequest.little_endian_unpack(buffer)
         else:
             AESKey = self.AESKey
         crc_confirmed = False
         tries = 0
 
         while tries < Server.MAX_TRIES and not crc_confirmed:
-            if currRequest.code != RequestCode.FILE_SEND.value:
+            if currRequest.code != request_code.FILE_SEND.value:
                 return
             contentSize = currRequest.payload[:SIZE_UINT32_T]
             filename = currRequest.payload[SIZE_UINT32_T:SIZE_UINT32_T +
@@ -205,25 +206,25 @@ class Server:
                 ResponseCode.FILE_OK_CRC.value, resPayloadSize)
             newResponse.payload = contentSize + filename.encode('utf-8')
             newResponse.payload += struct.pack('<I', checksum)
-            buffer = newResponse.littleEndianPack()
+            buffer = newResponse.little_endian_pack()
             sendPacket(conn, buffer)
 
             # Receive confirmation for CRC.
             buffer = conn.recv(PACKET_SIZE)
-            currRequest.littleEndianUnpack(buffer)
-            if currRequest.code == RequestCode.CRC_OK.value:
+            currRequest.little_endian_unpack(buffer)
+            if currRequest.code == request_code.CRC_OK.value:
                 crc_confirmed = True
                 print("CRC confirmed, backing up the file.")
-            elif currRequest.code == RequestCode.CRC_INVALID_RETRY.value:
+            elif currRequest.code == request_code.CRC_INVALID_RETRY.value:
                 tries += 1
                 print("Failed to confirm CRC, waiting for user to try again.")
-            elif currRequest.code == RequestCode.CRC_INVALID_EXIT.value:
+            elif currRequest.code == request_code.CRC_INVALID_EXIT.value:
                 print("Failed to confirm CRC after total of 4 invalid CRC.\nFile transfer is not verified.")
                 return
         # End of while loop
 
         finalRes = Response(ResponseCode.MSG_RECEIVED.value, 0)
-        buffer = finalRes.littleEndianPack()
+        buffer = finalRes.little_endian_pack()
 
         createDirectory('backup')
         dec_filename = filename.split("\x00")[0]
@@ -240,6 +241,6 @@ class Server:
             sendPacket(conn, buffer)
         except Exception as e:
             currResponse = Response(ResponseCode.GENERAL_ERROR.value, 0)  # No UUID if user didn't appear in DB
-            buffer = currResponse.littleEndianPack()
+            buffer = currResponse.little_endian_pack()
             sendPacket(conn, buffer)
             print(f'Error: Failed to write to backup - {e}.')

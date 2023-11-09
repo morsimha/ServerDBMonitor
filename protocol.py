@@ -10,7 +10,7 @@ class Request:
         self.payloadSize = 0
         self.payload = b''
 
-    def littleEndianUnpack(self, data):
+    def little_endian_unpack(self, data):
         """ Unpacks binary data received into the correct fields """
         try:
             self.uuid, self.version, self.code, self.payloadSize = struct.unpack(
@@ -25,13 +25,13 @@ class Request:
 
 
 class Response:
-    def __init__(self, code, payloadSize):
+    def __init__(self, code, payload_size):
         self.version = SERVER_VER
         self.code = code
-        self.payloadSize = payloadSize
+        self.payloadSize = payload_size
         self.payload = b''
 
-    def littleEndianPack(self):
+    def little_endian_pack(self):
         """ Packs the data into a struct according to the server's protocol """
         packedData = struct.pack('<BHI', self.version,
                                  self.code, self.payloadSize)

@@ -15,7 +15,7 @@ MAX_FILE_LEN = 255
 MAX_AES_LEN = 128
 
 
-class RequestCode(Enum):
+class request_code(Enum):
     REGISTER_REQUEST = 1025
     PUB_KEY_SEND = 1026
     LOGIN_REQUEST = 1027
