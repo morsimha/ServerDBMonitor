@@ -1,7 +1,3 @@
-"""
-This code is taken from Stackoverflow.
-https://stackoverflow.com/questions/65131642/what-is-a-python-cksum-equivalent-for-very-large-files-and-how-does-it-work
-"""
 
 crctab = [
     0x00000000,
