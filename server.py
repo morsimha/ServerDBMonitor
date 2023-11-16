@@ -130,7 +130,7 @@ class Server:
                 self.database.register_client(id, user)
                 self.database.set_last_seen(id, str(datetime.now()))
                 curr_response.payload = id
-                print(f'Successfully registered {user} with UUID of {id.hex()}.')
+                print(f'Successfully registered {user}!')
                 data = curr_response.little_endian_pack()
         except Exception as e:
             curr_response.code = self.prot_codes["GENERAL_ERROR"]
@@ -232,6 +232,7 @@ class Server:
                 enc_content += tmp_Payload[:curr_payload_size]
                 size_left -= curr_payload_size
 
+            print("File received successfully! verifying CRC..")
             wrapper = Encryptor()
             dec_content = wrapper.decrypt_AES(enc_content, AESKey)
 
@@ -240,7 +241,7 @@ class Server:
             digest.update(dec_content)
             checksum = digest.digest()
 
-            # Send Response 2103
+            # Send 2103
             res_payload_size = 2 * SIZE_UINT32_T + MAX_FILE_LEN
             new_response = ServerResponse(
                 self.prot_codes["FILE_OK_CRC"], res_payload_size)

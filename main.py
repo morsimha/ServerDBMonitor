@@ -4,12 +4,11 @@ import sys
 import server
 import database
 
-# Main function - runs the server.
 if __name__ == '__main__':
     server = server.Server()
     database = database.Database()
 
-    # run should fail for db failure, or errors while listening.
+    # Run should fail for db failure, or errors while listening.
     status = database.locate_database
     if status:
         try:
