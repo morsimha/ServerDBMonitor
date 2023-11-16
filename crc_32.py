@@ -1,3 +1,4 @@
+# crc_32.py
 
 crctab = [
     0x00000000,
@@ -259,10 +260,11 @@ crctab = [
 ]
 
 
-def UNSIGNED(n): return n & 0xFFFFFFFF
+def UNSIGNED(n):
+    return n & 0xFFFFFFFF
 
 
-class crc32:
+class crc_32:
     def __init__(self):
         self.nchars = 0
         self.crc = 0

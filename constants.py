@@ -13,6 +13,6 @@ SIZE_UINT32_T = 4
 MAX_FILE_LEN = 255
 MAX_AES_LEN = 128
 MAX_TRIES = 3
-DB_FILE = 'defensive.db'
-PORT_FILE = 'port.info'
+DB_FILE = './defensive.db'
+PORT_FILE = './port.info'
 
