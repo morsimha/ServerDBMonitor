@@ -1,3 +1,6 @@
+# server.py
+
+
 import os
 import socket
 from constants import *
@@ -8,7 +11,7 @@ import uuid
 from encryptor import Encryptor
 from _thread import *
 import threading
-import crc
+import crc_32
 import struct
 
 my_lock = threading.Lock()
@@ -33,6 +36,7 @@ class Server:
         self.loggedUser = False
         self.database = Database()
         self.AESKey = ''
+        self.readable_filename = ""
         self.prot_codes = {
             "REGISTER_REQUEST": 1025,
             "SEND_PUB_KEY": 1026,
@@ -53,12 +57,12 @@ class Server:
         }
 
     @staticmethod
-    def send_packet(socket, buffer):
+    def send_packet(sock, buffer):
         """ Adds \0  to the buffer and sends it to the socket. """
         if len(buffer) < PACKET_SIZE:
             buffer += bytearray(PACKET_SIZE - len(buffer))  # Pad with \0
 
-        socket.send(buffer)
+        sock.send(buffer)
 
     def read(self, conn):
         data = conn.recv(PACKET_SIZE)
@@ -78,7 +82,7 @@ class Server:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind((self.host, self.port))
             sock.listen(5)
-            print(f'Server is running on port {self.port}, listening for connections..')
+            print(f'Server is up! Running on port {self.port} and listening for connections..')
         except Exception as e:
             print(f'-F- Error occurred: {e}')
             return False
@@ -86,7 +90,7 @@ class Server:
         while True:
             conn, addr = sock.accept()
             my_lock.acquire()
-            print(f'Accepted connection from {addr[0]}:{addr[1]}')
+            print(f'Connection request was accepted from {addr[0]}:{addr[1]}')
             start_new_thread(self.read, (conn,))
 
     def handle_request(self, conn, data):
@@ -101,7 +105,10 @@ class Server:
         elif requested_service == self.prot_codes["LOGIN_REQUEST"]:
             self.login_user(conn, curr_request)
         elif requested_service == self.prot_codes["SEND_PUB_KEY"] or self.prot_codes["FILE_SEND"]:
-            self.upload_file(conn, curr_request)
+            status =self.upload_file(conn, curr_request)
+            if status:
+                print(f"Success! {self.readable_filename} was successfully uploaded to the server!")
+                print("Reminder: Server is still listening for connections..\n")
         else:
             return
 
@@ -112,7 +119,7 @@ class Server:
             self.prot_codes["REGISTER_SUCCESS"], UUID_BYTES)
         user = curr_request.payload.decode('utf-8')
         try:
-            if self.database.isExistentUser(user):
+            if self.database.is_known_user(user):
                 curr_response.code = self.prot_codes["REGISTER_ERROR"]
                 curr_response.payloadSize = 0
                 data = curr_response.little_endian_pack()
@@ -120,7 +127,7 @@ class Server:
 
             else:
                 id = bytes.fromhex(uuid.uuid4().hex)
-                self.database.registerClient(id, user)
+                self.database.register_client(id, user)
                 self.database.set_last_seen(id, str(datetime.now()))
                 curr_response.payload = id
                 print(f'Successfully registered {user} with UUID of {id.hex()}.')
@@ -132,7 +139,7 @@ class Server:
             print(f'-F- Failed to register user - {e}.')
         self.send_packet(conn, data)
 
-    def sendPubKey(self, conn, curr_request):
+    def send_pubkey(self, conn, curr_request):
         """ Receives a public key, generates AES key, and sends it, only applies for new users. """
         enc = Encryptor()
         offset = curr_request.payloadSize - PUB_KEY_LEN
@@ -165,7 +172,7 @@ class Server:
         enc = Encryptor()
         offset = curr_request.payloadSize
         username = curr_request.payload[:offset].decode('utf-8')
-        user_info = self.database.getUserInfo(
+        user_info = self.database.get_user_info_from_db(
             username)  # Assume getUserInfo method retrieves the UUID and AES key for a given username
         try:
             if user_info:
@@ -180,15 +187,15 @@ class Server:
                     # Sets the payload to the user's UUID concatenated with the AES key
                     curr_response.payload = user_uuid + enc_aes_key
                     self.loggedUser = True
-                    print(f"Successfully logged in user {username} with UUID: {user_uuid.hex()}")
+                    print(f"Successfully logged in user {username}")
                 else:
                     curr_response = ServerResponse(self.prot_codes["LOGIN_ERROR"], user_info['UUID'] if user_info[
                         'UUID'] else 0)  # Return UUID payload for login error, no payload if doesn't exist in DB
-                    print(f"-F- Failed login attempt for {username}")
+                    print(f"-F- Failed login attempt for {username}\n")
             else:
                 # User was not found in database
                 curr_response = ServerResponse(self.prot_codes["LOGIN_ERROR"], 0)  # No UUID if user didn't appear in DB
-                print(f"-F- Login attempt failed for username: {username}. User does not exist in database.")
+                print(f"-F- Login attempt failed for username: {username}. User does not exist in database.\n")
 
         except Exception as e:
             curr_response = ServerResponse(self.prot_codes["GENERAL_ERROR"], 0)  # No UUID if user didn't appear in DB
@@ -200,7 +207,7 @@ class Server:
     def upload_file(self, conn, curr_request):
         """ Handles upload of file, including encryption. """
         if curr_request.code == self.prot_codes["SEND_PUB_KEY"]:
-            AESKey = self.sendPubKey(conn, curr_request)
+            AESKey = self.send_pubkey(conn, curr_request)
             buffer = conn.recv(PACKET_SIZE)
             curr_request.l_endian_unpack(buffer)
         else:
@@ -229,7 +236,7 @@ class Server:
             dec_content = wrapper.decrypt_AES(enc_content, AESKey)
 
             # Calculate checksum
-            digest = crc.crc32()
+            digest = crc_32.crc_32()
             digest.update(dec_content)
             checksum = digest.digest()
 
@@ -247,7 +254,7 @@ class Server:
             curr_request.l_endian_unpack(buffer)
             if curr_request.code == self.prot_codes["CRC_OK"]:
                 crc_confirmed = True
-                print("CRC confirmed, backing up the file.")
+                print("CRC confirmed!")
             elif curr_request.code == self.prot_codes["CRC_INVALID_RETRY"]:
                 tries += 1
                 print("Failed to confirm CRC, waiting for user to try again.")
@@ -261,20 +268,21 @@ class Server:
 
         if not os.path.exists('backup'):
             os.mkdir('backup')
-        dec_filename = filename.split("\x00")[0]
-        pathname = 'backup\\' + dec_filename
+        self.readable_filename = filename.split("\x00")[0]
+        pathname = 'backup\\' + self.readable_filename
+        print("Initiating backup for received file..")
         try:
             f = open(pathname, 'wb')
             f.write(dec_content)
             f.close()
             self.database.register_file(
-                curr_request.uuid, dec_filename, pathname, 1)
-            # print(self.database.executeCommand("SELECT * FROM clients"))
-            # print(self.database.executeCommand("SELECT * FROM files"))
-            print(f'Successfully backed up file {dec_filename}.')
+                curr_request.uuid, self.readable_filename, pathname, 1)
+            print(f'Successfully backed up file {self.readable_filename}.')
             self.send_packet(conn, buffer)
+            return True
         except Exception as e:
             curr_response = ServerResponse(self.prot_codes["GENERAL_ERROR"], 0)  # No UUID if user didn't appear in DB
             buffer = curr_response.little_endian_pack()
             self.send_packet(conn, buffer)
             print(f'Error: Failed to write to backup - {e}.')
+            return False
