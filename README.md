@@ -1,6 +1,6 @@
 # ServerDBMonitor
 
-ServerDBMonitor is a Python application designed to initialize and run a server while ensuring that a required database is correctly located and operational. If the database is not accessible or if any errors occur during the server's runtime, the application will gracefully shut down and provide an error report.
+ServerDBMonitor is a Python application designed to initialize and run a server while ensuring that a required database is correctly located and operational. This server is waiting for connections on a specific port, making sure a secure and valid trasmitions are being done.
 
 This server communicates with a C++ client I wrote - https://github.com/morsimha/ClientDBMonitor
 
