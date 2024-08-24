@@ -13,3 +13,7 @@ This project was made as a final university course - "Defensive System Developme
 - **Error Handling:** Captures and reports errors that occur during server startup or runtime.
 - **Graceful Shutdown:** If the server fails to start or the database is not accessible, the application will exit with an error status.
 
+# Demo Video
+Watch the demo video below to see a Server/Client communication in action:
+
+ [![Hangman Game Demo](https://img.youtube.com/vi/Bp3-0G_OEbI/0.jpg)](https://youtu.be/Bp3-0G_OEbI)”
